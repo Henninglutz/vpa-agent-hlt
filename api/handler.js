@@ -25,10 +25,13 @@ export default async function handler(req, res) {
 
   const data = await gptRes.json();
   const rawAnswer = data.choices?.[0]?.message?.content;
+  console.log("🧠 GPT-Rohantwort:", rawAnswer);
+
 
   let parsed;
   try {
     parsed = JSON.parse(rawAnswer.match(/{[\s\S]*}/)?.[0]);
+    console.log("📦 Geparstes JSON:", parsed);
   } catch (e) {
     return res.status(500).json({ error: "Fehler bei der GPT-JSON-Antwort", raw: rawAnswer });
   }
