@@ -13,7 +13,8 @@ export default async function handler(req, res) {
       messages: [
         {
           role: "system",
-          content: "Du bist ein Assistent, der Kalenderbefehle in JSON umwandelt. Beispiel: 'Trag mir für Donnerstag 14 Uhr einen Zoom-Call mit Lisa ein.' → {\"summary\":\"Zoom-Call mit Lisa\", \"start\":\"2025-05-22T14:00:00+02:00\", \"end\":\"2025-05-22T14:30:00+02:00\", \"action\":\"create\"}"
+          content: `Du bist ein Assistent, der Kalenderbefehle in JSON umwandelt. Nutze immer das aktuelle Jahr (2025), wenn kein Jahr genannt wird. Beispiel: "Trag mir für Donnerstag 14 Uhr einen Zoom-Call mit Lisa ein." → {"summary":"Zoom-Call mit Lisa", "start":"2025-05-22T14:00:00+02:00", "end":"2025-05-22T14:30:00+02:00", "action":"create"}`
+
         },
         {
           role: "user",
