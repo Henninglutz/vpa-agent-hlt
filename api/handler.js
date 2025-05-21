@@ -1,6 +1,8 @@
 // Datei: /api/handler.js
+
 export default async function handler(req, res) {
   const { command } = req.body;
+  const today = new Date().toISOString().split("T")[0]; // z. B. "2025-05-21"
 
   const gptRes = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -13,8 +15,7 @@ export default async function handler(req, res) {
       messages: [
         {
           role: "system",
-          content: `Du bist ein Assistent, der Kalenderbefehle in JSON umwandelt. Nutze immer das aktuelle Jahr (2025), wenn kein Jahr genannt wird. Beispiel: "Trag mir für Donnerstag 14 Uhr einen Zoom-Call mit Lisa ein." → {"summary":"Zoom-Call mit Lisa", "start":"2025-05-22T14:00:00+02:00", "end":"2025-05-22T14:30:00+02:00", "action":"create"}`
-
+          content: `Heute ist ${today}. Du bist ein Assistent, der Kalenderbefehle in JSON umwandelt. Wenn der Nutzer z. B. "heute" oder "morgen" sagt, rechne basierend auf dem heutigen Datum. Beispiel: 'Trag mir für heute 14 Uhr einen Zoom-Call mit Lisa ein.' → {"summary":"Zoom-Call mit Lisa", "start":"${today}T14:00:00+02:00", "end":"${today}T14:30:00+02:00", "action":"create"}`
         },
         {
           role: "user",
@@ -27,7 +28,6 @@ export default async function handler(req, res) {
   const data = await gptRes.json();
   const rawAnswer = data.choices?.[0]?.message?.content;
   console.log("🧠 GPT-Rohantwort:", rawAnswer);
-
 
   let parsed;
   try {
