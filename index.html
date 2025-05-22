@@ -1,77 +1,158 @@
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>🧠 VPA HLT Agent</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        background-color: #f8fafc;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        margin: 0;
+      }
 
-import formidable from "formidable";
-import { Readable } from "stream";
+      .container {
+        background: white;
+        padding: 2rem;
+        border-radius: 16px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.05);
+        width: 100%;
+        max-width: 600px;
+        box-sizing: border-box;
+      }
 
-const parseForm = async (req) =>
-  new Promise((resolve, reject) => {
-    const form = formidable({ multiples: false });
-    form.parse(req, (err, fields, files) => {
-      if (err) reject(err);
-      else resolve({ fields, files });
-    });
-  });
+      h1 {
+        text-align: center;
+        font-size: 1.8rem;
+        margin-bottom: 1.5rem;
+      }
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Nur POST erlaubt" });
-  }
+      form {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+      }
 
-  const { fields, files } = await parseForm(req);
-  const command = fields.command || "";
-  const uploadedFile = files.file;
+      input[type="text"] {
+        flex: 1;
+        padding: 0.6rem 1rem;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        font-size: 1rem;
+      }
 
-  const today = new Date().toISOString().split("T")[0];
-  const systemPrompt = `Heute ist ${today}. Du bist ein Assistent, der Kalenderbefehle in JSON umwandelt. Beispiel: 'Trag mir für heute 14 Uhr einen Zoom-Call mit Lisa ein.' → {"summary":"Zoom-Call mit Lisa", "start":"${today}T14:00:00+02:00", "end":"${today}T14:30:00+02:00", "action":"create"}`;
+      input[type="file"] {
+        display: none;
+      }
 
-  const gptRes = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "gpt-4",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: `Wandle folgenden Befehl in JSON um: ${command}` },
-      ],
-      temperature: 0.7,
-    }),
-  });
+      label[for="file-upload"] {
+        cursor: pointer;
+        font-size: 1.3rem;
+      }
 
-  const data = await gptRes.json();
-  const rawAnswer = data.choices?.[0]?.message?.content;
-  console.log("🧠 GPT-Rohantwort:", rawAnswer);
+      button {
+        background-color: #2563eb;
+        color: white;
+        padding: 0.6rem 1rem;
+        border: none;
+        border-radius: 8px;
+        font-size: 1rem;
+        cursor: pointer;
+      }
 
-  let parsed;
-  try {
-    parsed = JSON.parse(rawAnswer.match(/{[\\s\\S]*}/)?.[0]);
-    console.log("📦 Geparstes JSON:", parsed);
+      #response {
+        background-color: #f1f5f9;
+        padding: 1rem;
+        border-radius: 8px;
+        white-space: pre-wrap;
+        min-height: 100px;
+        font-size: 0.95rem;
+      }
 
-    // Wenn es ein JSON ist, an deinen Webhook senden
-    await fetch(process.env.WEBHOOK_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(parsed),
-    });
+      .top-right {
+        text-align: right;
+        font-size: 0.85rem;
+        margin-bottom: 0.5rem;
+      }
 
-    return res.status(200).json({ status: "✅ Termin gespeichert", payload: parsed });
-  } catch (e) {
-    // Wenn eine Datei da ist, z. B. Stoffmuster
-    if (uploadedFile) {
-      return res.status(200).json({
-        status: "📎 Datei verarbeitet",
-        filename: uploadedFile.originalFilename,
-        text: rawAnswer,
+      .top-right a {
+        text-decoration: none;
+        color: #2563eb;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="container">
+      <div class="top-right">
+        🎙️ <a href="#" onclick="startSpeech()">Spracheingabe</a>
+      </div>
+
+      <h1>🧠 Dein VPA HLT Agent</h1>
+
+      <form id="chat-form" enctype="multipart/form-data">
+        <input type="text" id="command" placeholder="Was soll ich tun?" required />
+        <label for="file-upload" title="Datei anhängen">📎</label>
+        <input type="file" id="file-upload" name="file" />
+        <button type="submit">Absenden</button>
+      </form>
+
+      <div id="response">Antwort erscheint hier …</div>
+    </div>
+
+    <script>
+      const form = document.getElementById("chat-form");
+      const input = document.getElementById("command");
+      const fileInput = document.getElementById("file-upload");
+      const responseBox = document.getElementById("response");
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        const formData = new FormData();
+        formData.append("command", input.value);
+        if (fileInput.files.length > 0) {
+          formData.append("file", fileInput.files[0]);
+        }
+
+        responseBox.textContent = "⏳ Ich denke nach …";
+
+        try {
+          const res = await fetch("/api/handler", {
+            method: "POST",
+            body: formData,
+          });
+
+          const data = await res.json();
+          responseBox.textContent = `✅ ${data.status}\n\n🧠 ${data.text || JSON.stringify(data.payload || {})}`;
+        } catch (err) {
+          responseBox.textContent = `❌ Fehler: ${err.message}`;
+        }
       });
-    }
 
-    // Standardtextantwort
-    return res.status(200).json({ status: "📝 Textantwort", text: rawAnswer });
-  }
-}
+      // Spracheingabe starten
+      function startSpeech() {
+        const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+        recognition.lang = "de-DE";
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
+
+        recognition.onresult = (event) => {
+          const transcript = event.results[0][0].transcript;
+          input.value = transcript;
+        };
+
+        recognition.onerror = (event) => {
+          alert("Spracherkennung fehlgeschlagen: " + event.error);
+        };
+
+        recognition.start();
+      }
+    </script>
+  </body>
+</html>
