@@ -26,7 +26,7 @@ export default async function handler(req, res) {
   const uploadedFile = files.file;
 
   const today = new Date().toISOString().split("T")[0];
-  const systemPrompt = `Heute ist ${today}. Du bist ein Assistent, der Kalenderbefehle in JSON umwandelt. Wenn der Nutzer z. B. "heute" oder "morgen" sagt, rechne basierend auf dem heutigen Datum. Beispiel: 'Trag mir für heute 14 Uhr einen Zoom-Call mit Lisa ein.' → {"summary":"Zoom-Call mit Lisa", "start":"${today}T14:00:00+02:00", "end":"${today}T14:30:00+02:00", "action":"create"}`;
+  const systemPrompt = `Heute ist ${today}. Du bist ein Assistent, der Kalenderbefehle in JSON umwandelt. Wenn der Nutzer z. B. "heute" oder "morgen" sagt, rechne basierend auf dem heutigen Datum. Antwort bitte ausschließlich im JSON-Format. Kein Fließtext, keine Einleitung. Beispiel: 'Trag mir für heute 14 Uhr einen Zoom-Call mit Lisa ein.' → {"summary":"Zoom-Call mit Lisa", "start":"${today}T14:00:00+02:00", "end":"${today}T14:30:00+02:00", "action":"create"}`;
 
   const gptRes = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -50,13 +50,17 @@ export default async function handler(req, res) {
 
   let parsed;
   try {
-   const match = rawAnswer.match(/{[\s\S]*}/);
-if (!match) throw new Error("Kein JSON-Teil gefunden");
-parsed = JSON.parse(match[0]);
+    const match = rawAnswer?.match(/{[\s\S]*}/);
+    if (!match || match.length === 0) throw new Error("Kein JSON-Teil gefunden");
+
+    try {
+      parsed = JSON.parse(match[0]);
+    } catch (jsonError) {
+      throw new Error("JSON-Parsing fehlgeschlagen");
+    }
 
     console.log("📦 Geparstes JSON:", parsed);
 
-    // Wenn es ein JSON ist, sende an Webhook
     await fetch(process.env.WEBHOOK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -65,6 +69,8 @@ parsed = JSON.parse(match[0]);
 
     return res.status(200).json({ status: "✅ Termin gespeichert", payload: parsed });
   } catch (e) {
+    console.warn("⚠️ Fehler beim Parsen:", e.message);
+
     if (uploadedFile) {
       return res.status(200).json({
         status: "📎 Datei verarbeitet",
@@ -74,7 +80,7 @@ parsed = JSON.parse(match[0]);
     }
 
     return res.status(200).json({
-      status: "📝 Textantwort",
+      status: "📝 Textantwort (kein JSON erkannt)",
       text: rawAnswer,
     });
   }
