@@ -2,73 +2,143 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <title>Dein VPA-Agent</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VPA HLT Agent</title>
   <style>
     body {
-      font-family: sans-serif;
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: #f5f7fa;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
       padding: 2rem;
     }
-    input[type="text"] {
-      width: 300px;
-      padding: 0.5rem;
-      margin-right: 0.5rem;
+    .container {
+      background: white;
+      border-radius: 1rem;
+      box-shadow: 0 0 20px rgba(0,0,0,0.1);
+      padding: 2rem;
+      max-width: 600px;
+      width: 100%;
     }
-    button {
-      padding: 0.5rem;
+    h1 {
+      text-align: center;
+      color: #333;
+    }
+    .output {
+      margin-top: 1rem;
+      background: #f0f0f0;
+      padding: 1rem;
+      border-radius: 0.5rem;
+      min-height: 100px;
+    }
+    .input-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+    input[type="text"] {
+      flex-grow: 1;
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+      border: 1px solid #ccc;
+    }
+    .btn {
+      background: #0050b3;
+      color: white;
+      padding: 0.75rem 1rem;
+      border: none;
+      border-radius: 0.5rem;
+      cursor: pointer;
+    }
+    .upload-label {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      cursor: pointer;
+    }
+    #file-upload {
+      display: none;
+    }
+    .mode-switch {
+      text-align: right;
+      margin-bottom: 1rem;
+    }
+    .mode-switch button {
+      background: none;
+      border: none;
+      color: #0050b3;
+      cursor: pointer;
+      font-size: 0.9rem;
     }
   </style>
 </head>
 <body>
-  <h1>🎙️ Dein VPA-Agent</h1>
-
-  <input type="text" id="textInput" placeholder="Dein Kalendereintrag ..." />
-  <button id="sendButton">Senden</button>
-  <button id="voiceButton">Sprich jetzt</button>
-
-  <p id="status">Bereit</p>
+  <div class="container">
+    <div class="mode-switch">
+      <button onclick="toggleInputMode()" id="modeButton">🎙️ Spracheingabe</button>
+    </div>
+    <h1>🧠 Dein VPA HLT Agent</h1>
+    <form id="agent-form">
+      <div class="input-row" id="text-input">
+        <input type="text" id="command" placeholder="Sprich oder schreibe deinen Wunsch..." />
+        <label for="file-upload" class="upload-label">📎<input type="file" id="file-upload" /></label>
+        <button type="submit" class="btn">Absenden</button>
+      </div>
+      <div id="voice-input" style="display:none">
+        <button type="button" class="btn" onclick="startVoiceInput()">🎤 Sprechen</button>
+      </div>
+    </form>
+    <div class="output" id="response"></div>
+  </div>
 
   <script>
-    const textInput = document.getElementById("textInput");
-    const sendButton = document.getElementById("sendButton");
-    const voiceButton = document.getElementById("voiceButton");
-    const status = document.getElementById("status");
+    let useVoice = false;
 
-    const sendCommand = (command) => {
-      status.textContent = "⏳ Sende...";
-      fetch("/api/handler", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ command })
-      })
-        .then(res => res.json())
-        .then(data => {
-          console.log("✅ Antwort:", data);
-          status.textContent = "✅ Termin wurde verarbeitet.";
-        })
-        .catch(err => {
-          console.error("❌ Fehler:", err);
-          status.textContent = "❌ Fehler beim Senden.";
-        });
-    };
+    function toggleInputMode() {
+      useVoice = !useVoice;
+      document.getElementById("text-input").style.display = useVoice ? "none" : "flex";
+      document.getElementById("voice-input").style.display = useVoice ? "block" : "none";
+      document.getElementById("modeButton").textContent = useVoice ? "⌨️ Texteingabe" : "🎙️ Spracheingabe";
+    }
 
-    sendButton.onclick = () => {
-      const command = textInput.value.trim();
-      if (command) sendCommand(command);
-    };
-
-    voiceButton.onclick = () => {
+    function startVoiceInput() {
       const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
       recognition.lang = "de-DE";
       recognition.start();
 
-      recognition.onstart = () => (status.textContent = "🎤 Hören...");
-      recognition.onerror = () => (status.textContent = "❌ Sprachfehler");
-      recognition.onresult = (event) => {
-        const spoken = event.results[0][0].transcript;
-        textInput.value = spoken;
-        sendCommand(spoken);
+      recognition.onresult = function(event) {
+        const text = event.results[0][0].transcript;
+        document.getElementById("command").value = text;
+        document.getElementById("voice-input").style.display = "none";
+        document.getElementById("text-input").style.display = "flex";
+        document.getElementById("modeButton").textContent = "🎙️ Spracheingabe";
+        useVoice = false;
       };
-    };
+    }
+
+    document.getElementById("agent-form").addEventListener("submit", async function(e) {
+      e.preventDefault();
+
+      const command = document.getElementById("command").value;
+      const fileInput = document.getElementById("file-upload");
+      const formData = new FormData();
+      formData.append("command", command);
+      if (fileInput.files[0]) {
+        formData.append("file", fileInput.files[0]);
+      }
+
+      const res = await fetch("/api/handler", {
+        method: "POST",
+        body: formData
+      });
+
+      const data = await res.json();
+      const out = document.getElementById("response");
+      out.innerText = data.text || JSON.stringify(data.payload || data, null, 2);
+    });
   </script>
 </body>
 </html>
