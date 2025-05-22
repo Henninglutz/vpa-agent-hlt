@@ -50,7 +50,10 @@ export default async function handler(req, res) {
 
   let parsed;
   try {
-    parsed = JSON.parse(rawAnswer.match(/{[\s\S]*}/)?.[0]);
+   const match = rawAnswer.match(/{[\s\S]*}/);
+if (!match) throw new Error("Kein JSON-Teil gefunden");
+parsed = JSON.parse(match[0]);
+
     console.log("📦 Geparstes JSON:", parsed);
 
     // Wenn es ein JSON ist, sende an Webhook
