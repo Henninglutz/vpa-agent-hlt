@@ -26,7 +26,7 @@ export default async function handler(req, res) {
   const uploadedFile = files.file;
 
   const today = new Date().toISOString().split("T")[0];
-  const systemPrompt = `Heute ist ${today}. Du bist ein Assistent, der Kalenderbefehle in JSON umwandelt. Beispiel: 'Trag mir für heute 14 Uhr einen Zoom-Call mit Lisa ein.' → {"summary":"Zoom-Call mit Lisa", "start":"${today}T14:00:00+02:00", "end":"${today}T14:30:00+02:00", "action":"create"}`;
+  const systemPrompt = `Heute ist ${today}. Du bist ein Assistent, der Kalenderbefehle in JSON umwandelt. Wenn der Nutzer z. B. "heute" oder "morgen" sagt, rechne basierend auf dem heutigen Datum. Beispiel: 'Trag mir für heute 14 Uhr einen Zoom-Call mit Lisa ein.' → {"summary":"Zoom-Call mit Lisa", "start":"${today}T14:00:00+02:00", "end":"${today}T14:30:00+02:00", "action":"create"}`;
 
   const gptRes = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -50,10 +50,10 @@ export default async function handler(req, res) {
 
   let parsed;
   try {
-    parsed = JSON.parse(rawAnswer.match(/{[\\s\\S]*}/)?.[0]);
+    parsed = JSON.parse(rawAnswer.match(/{[\s\S]*}/)?.[0]);
     console.log("📦 Geparstes JSON:", parsed);
 
-    // Wenn es ein JSON ist, an deinen Webhook senden
+    // Wenn es ein JSON ist, sende an Webhook
     await fetch(process.env.WEBHOOK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -62,7 +62,6 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ status: "✅ Termin gespeichert", payload: parsed });
   } catch (e) {
-    // Wenn eine Datei da ist, z. B. Stoffmuster
     if (uploadedFile) {
       return res.status(200).json({
         status: "📎 Datei verarbeitet",
@@ -71,7 +70,9 @@ export default async function handler(req, res) {
       });
     }
 
-    // Standardtextantwort
-    return res.status(200).json({ status: "📝 Textantwort", text: rawAnswer });
+    return res.status(200).json({
+      status: "📝 Textantwort",
+      text: rawAnswer,
+    });
   }
 }
