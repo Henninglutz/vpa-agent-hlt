@@ -1,144 +1,77 @@
-<!DOCTYPE html>
-<html lang="de">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VPA HLT Agent</title>
-  <style>
-    body {
-      margin: 0;
-      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-      background: #f5f7fa;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 2rem;
-    }
-    .container {
-      background: white;
-      border-radius: 1rem;
-      box-shadow: 0 0 20px rgba(0,0,0,0.1);
-      padding: 2rem;
-      max-width: 600px;
-      width: 100%;
-    }
-    h1 {
-      text-align: center;
-      color: #333;
-    }
-    .output {
-      margin-top: 1rem;
-      background: #f0f0f0;
-      padding: 1rem;
-      border-radius: 0.5rem;
-      min-height: 100px;
-    }
-    .input-row {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      margin-top: 1rem;
-    }
-    input[type="text"] {
-      flex-grow: 1;
-      padding: 0.75rem;
-      border-radius: 0.5rem;
-      border: 1px solid #ccc;
-    }
-    .btn {
-      background: #0050b3;
-      color: white;
-      padding: 0.75rem 1rem;
-      border: none;
-      border-radius: 0.5rem;
-      cursor: pointer;
-    }
-    .upload-label {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      cursor: pointer;
-    }
-    #file-upload {
-      display: none;
-    }
-    .mode-switch {
-      text-align: right;
-      margin-bottom: 1rem;
-    }
-    .mode-switch button {
-      background: none;
-      border: none;
-      color: #0050b3;
-      cursor: pointer;
-      font-size: 0.9rem;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="mode-switch">
-      <button onclick="toggleInputMode()" id="modeButton">🎙️ Spracheingabe</button>
-    </div>
-    <h1>🧠 Dein VPA HLT Agent</h1>
-    <form id="agent-form">
-      <div class="input-row" id="text-input">
-        <input type="text" id="command" placeholder="Sprich oder schreibe deinen Wunsch..." />
-        <label for="file-upload" class="upload-label">📎<input type="file" id="file-upload" /></label>
-        <button type="submit" class="btn">Absenden</button>
-      </div>
-      <div id="voice-input" style="display:none">
-        <button type="button" class="btn" onclick="startVoiceInput()">🎤 Sprechen</button>
-      </div>
-    </form>
-    <div class="output" id="response"></div>
-  </div>
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
 
-  <script>
-    let useVoice = false;
+import formidable from "formidable";
+import { Readable } from "stream";
 
-    function toggleInputMode() {
-      useVoice = !useVoice;
-      document.getElementById("text-input").style.display = useVoice ? "none" : "flex";
-      document.getElementById("voice-input").style.display = useVoice ? "block" : "none";
-      document.getElementById("modeButton").textContent = useVoice ? "⌨️ Texteingabe" : "🎙️ Spracheingabe";
-    }
-
-    function startVoiceInput() {
-      const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-      recognition.lang = "de-DE";
-      recognition.start();
-
-      recognition.onresult = function(event) {
-        const text = event.results[0][0].transcript;
-        document.getElementById("command").value = text;
-        document.getElementById("voice-input").style.display = "none";
-        document.getElementById("text-input").style.display = "flex";
-        document.getElementById("modeButton").textContent = "🎙️ Spracheingabe";
-        useVoice = false;
-      };
-    }
-
-    document.getElementById("agent-form").addEventListener("submit", async function(e) {
-      e.preventDefault();
-
-      const command = document.getElementById("command").value;
-      const fileInput = document.getElementById("file-upload");
-      const formData = new FormData();
-      formData.append("command", command);
-      if (fileInput.files[0]) {
-        formData.append("file", fileInput.files[0]);
-      }
-
-      const res = await fetch("/api/handler", {
-        method: "POST",
-        body: formData
-      });
-
-      const data = await res.json();
-      const out = document.getElementById("response");
-      out.innerText = data.text || JSON.stringify(data.payload || data, null, 2);
+const parseForm = async (req) =>
+  new Promise((resolve, reject) => {
+    const form = formidable({ multiples: false });
+    form.parse(req, (err, fields, files) => {
+      if (err) reject(err);
+      else resolve({ fields, files });
     });
-  </script>
-</body>
-</html>
+  });
+
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Nur POST erlaubt" });
+  }
+
+  const { fields, files } = await parseForm(req);
+  const command = fields.command || "";
+  const uploadedFile = files.file;
+
+  const today = new Date().toISOString().split("T")[0];
+  const systemPrompt = `Heute ist ${today}. Du bist ein Assistent, der Kalenderbefehle in JSON umwandelt. Beispiel: 'Trag mir für heute 14 Uhr einen Zoom-Call mit Lisa ein.' → {"summary":"Zoom-Call mit Lisa", "start":"${today}T14:00:00+02:00", "end":"${today}T14:30:00+02:00", "action":"create"}`;
+
+  const gptRes = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-4",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: `Wandle folgenden Befehl in JSON um: ${command}` },
+      ],
+      temperature: 0.7,
+    }),
+  });
+
+  const data = await gptRes.json();
+  const rawAnswer = data.choices?.[0]?.message?.content;
+  console.log("🧠 GPT-Rohantwort:", rawAnswer);
+
+  let parsed;
+  try {
+    parsed = JSON.parse(rawAnswer.match(/{[\\s\\S]*}/)?.[0]);
+    console.log("📦 Geparstes JSON:", parsed);
+
+    // Wenn es ein JSON ist, an deinen Webhook senden
+    await fetch(process.env.WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(parsed),
+    });
+
+    return res.status(200).json({ status: "✅ Termin gespeichert", payload: parsed });
+  } catch (e) {
+    // Wenn eine Datei da ist, z. B. Stoffmuster
+    if (uploadedFile) {
+      return res.status(200).json({
+        status: "📎 Datei verarbeitet",
+        filename: uploadedFile.originalFilename,
+        text: rawAnswer,
+      });
+    }
+
+    // Standardtextantwort
+    return res.status(200).json({ status: "📝 Textantwort", text: rawAnswer });
+  }
+}
