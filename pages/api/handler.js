@@ -26,7 +26,17 @@ export default async function handler(req, res) {
   const uploadedFile = files.file;
 
   const today = new Date().toISOString().split("T")[0];
-  const systemPrompt = `Heute ist ${today}. Du bist ein Assistent, der Kalenderbefehle in JSON umwandelt. Wenn der Nutzer z. B. "heute" oder "morgen" sagt, rechne basierend auf dem heutigen Datum. Antwort bitte ausschließlich im JSON-Format. Kein Fließtext, keine Einleitung. Beispiel: 'Trag mir für heute 14 Uhr einen Zoom-Call mit Lisa ein.' → {"summary":"Zoom-Call mit Lisa", "start":"${today}T14:00:00+02:00", "end":"${today}T14:30:00+02:00", "action":"create"}`;
+  const systemPrompt = `Heute ist ${today}. Du bist ein präziser JSON-Generator für Kalenderbefehle. Wenn der Nutzer z. B. "morgen" sagt, rechne das Datum in ISO 8601 um (z. B. 2025-05-23T06:00:00+02:00). 
+Antworte ausschließlich mit einem JSON-Objekt:
+
+{
+  "summary": "...",
+  "start": "2025-05-23T06:00:00+02:00",
+  "end": "2025-05-23T06:30:00+02:00",
+  "action": "create"
+}
+
+Kein Text vor oder nach dem JSON.`;
 
   const gptRes = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -48,19 +58,23 @@ export default async function handler(req, res) {
   const rawAnswer = data.choices?.[0]?.message?.content;
   console.log("🧠 GPT-Rohantwort:", rawAnswer);
 
-  let parsed;
   try {
     const match = rawAnswer?.match(/{[\s\S]*}/);
-    if (!match || match.length === 0) throw new Error("Kein JSON-Teil gefunden");
+    if (!match || match.length === 0) throw new Error("❌ Kein JSON erkannt");
 
+    let parsed;
     try {
       parsed = JSON.parse(match[0]);
-    } catch (jsonError) {
-      throw new Error("JSON-Parsing fehlgeschlagen");
+    } catch (err) {
+      throw new Error("❌ JSON-Parsing fehlgeschlagen");
     }
 
-    console.log("📦 Geparstes JSON:", parsed);
+    // 💡 Sanity Check: prüfen ob notwendige Felder vorhanden
+    if (!parsed.summary || !parsed.start || !parsed.end || !parsed.action) {
+      throw new Error("❌ JSON unvollständig");
+    }
 
+    // ✅ JSON an Webhook senden
     await fetch(process.env.WEBHOOK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -68,20 +82,24 @@ export default async function handler(req, res) {
     });
 
     return res.status(200).json({ status: "✅ Termin gespeichert", payload: parsed });
-  } catch (e) {
-    console.warn("⚠️ Fehler beim Parsen:", e.message);
+  } catch (error) {
+    console.warn("⚠️ Fehler beim Parsen:", error.message);
 
+    // 🧾 Wenn Datei hochgeladen wurde
     if (uploadedFile) {
       return res.status(200).json({
         status: "📎 Datei verarbeitet",
         filename: uploadedFile.originalFilename,
         text: rawAnswer,
+        warnung: error.message,
       });
     }
 
+    // 🧠 Nur Textantwort, kein valides JSON
     return res.status(200).json({
-      status: "📝 Textantwort (kein JSON erkannt)",
+      status: "📝 Nur Textantwort",
       text: rawAnswer,
+      warnung: error.message,
     });
   }
 }
